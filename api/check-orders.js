@@ -3,6 +3,37 @@ import { redis } from "../lib/redis";
 
 export default async function handler(req, res) {
   try {
+    // 👉 TEMP MODE: Skip Walmart if no real private key
+    const isTestMode =
+      !process.env.WM_PRIVATE_KEY ||
+      process.env.WM_PRIVATE_KEY === "TEMP";
+
+    // ✅ TEST DISCORD (always runs once)
+    await fetch(process.env.DISCORD_WEBHOOK, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        content: isTestMode
+          ? "🧪 TEST MODE: Discord working (no Walmart yet)"
+          : "🚀 Walmart integration running"
+      })
+    });
+
+    // 🚫 Skip Walmart logic if no private key
+    if (isTestMode) {
+      return res.status(200).json({
+        success: true,
+        mode: "test",
+        message: "Discord working, Walmart skipped"
+      });
+    }
+
+    // =========================
+    // 🚀 WALMART LOGIC (REAL MODE)
+    // =========================
+
     const lastTimestamp =
       (await redis.get("last_checked")) ||
       new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -46,9 +77,13 @@ export default async function handler(req, res) {
 
     await redis.set("last_checked", new Date().toISOString());
 
-    res.status(200).json({ success: true, orders: orders.length });
+    return res.status(200).json({
+      success: true,
+      mode: "live",
+      orders: orders.length
+    });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 }
